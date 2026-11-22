@@ -47,6 +47,7 @@ class ProviderSpec:
     default_priority: int = 100
     require_all_env_keys: bool = False
     integration_status: str = "active"
+    credential_source: str = "environment"
 
     def __post_init__(self) -> None:
         if not self.key or not self.name:
@@ -63,7 +64,7 @@ class ProviderSpec:
             raise ValueError("default_priority must be non-negative")
         if self.integration_status not in SUPPORTED_INTEGRATION_STATUSES:
             raise ValueError(f"unsupported integration status: {self.integration_status}")
-        if not self.keyless and not self.api_env_keys:
+        if not self.keyless and not self.api_env_keys and self.credential_source != "alpaca_account":
             raise ValueError("a keyed provider must declare api_env_keys")
 
     @property
@@ -80,6 +81,13 @@ class ProviderSpec:
 
 
 PROVIDER_CATALOG: tuple[ProviderSpec, ...] = (
+    ProviderSpec(
+        key="alpaca", name="Alpaca", tier="community", markets=frozenset({"USStock"}),
+        capabilities=frozenset({"market_data", "news", "options", "corporate_actions"}),
+        credential_source="alpaca_account", cost_level="free", default_priority=15,
+        integration_status="active",
+        license_warning="Account feed entitlements apply. IEX is single-venue; indicative option quotes are not OPRA quotes.",
+    ),
     # Community sources are intentionally simple and free/low-cost.  They are
     # suitable defaults for research workflows, not implicit redistribution
     # licences for a customer-facing product.
@@ -426,10 +434,17 @@ def provider_configuration_status(
     provider: str | ProviderSpec,
     *,
     environ: Mapping[str, str] | None = None,
+    user_id: int | None = None,
 ) -> dict[str, object]:
     """Return key-only configuration status without initializing a client."""
 
     spec = get_provider(provider)
+    if spec.credential_source == "alpaca_account":
+        from app.data_providers.alpaca_research import account_available
+
+        return {"provider": spec.key, "tier": spec.tier, "configured": account_available(user_id),
+                "keyless": False, "can_run_without_key": False, "api_env_keys": (),
+                "configured_env_keys": (), "missing_env_keys": ()}
     if environ is None:
         # The open-source settings page may persist keys in addon_config rather
         # than process environment variables.  Reuse the central resolver so

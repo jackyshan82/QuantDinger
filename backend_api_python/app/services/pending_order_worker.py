@@ -2715,6 +2715,11 @@ class PendingOrderWorker(
                     "stop_loss_price": stop_price,
                     "take_profit_price": take_price,
                 }
+            from app.services.alpaca_trading.session_policy import extended_order_options
+
+            session_options = extended_order_options(
+                market_type_for_client, order_type, bool(protection_kwargs),
+            )
             if order_type == "limit":
                 result = client.place_limit_order(
                     symbol=symbol,
@@ -2723,6 +2728,7 @@ class PendingOrderWorker(
                     price=limit_price,
                     market_type=market_type_for_client,
                     client_order_id=client_order_id,
+                    **session_options,
                     **protection_kwargs,
                 )
             else:

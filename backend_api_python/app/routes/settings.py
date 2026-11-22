@@ -480,6 +480,7 @@ CONFIG_SCHEMA = {
                 'default': 'openrouter',
                 'options': [
                     {'value': 'openrouter', 'label': 'OpenRouter (Multi-model gateway)'},
+                    {'value': 'codex', 'label': 'Codex'},
                     {'value': 'openai', 'label': 'OpenAI Direct'},
                     {'value': 'google', 'label': 'Google Gemini'},
                     {'value': 'deepseek', 'label': 'DeepSeek'},
@@ -1181,7 +1182,7 @@ CONFIG_SCHEMA = {
                 'key': 'SEARCH_PROVIDER',
                 'label': 'Search Provider',
                 'type': 'select',
-                'options': ['tavily', 'searxng', 'gdelt', 'serpapi', 'google', 'duckduckgo', 'none'],
+                'options': [{'value': 'alpaca', 'label': 'Alpaca'}, 'tavily', 'searxng', 'gdelt', 'serpapi', 'google', 'duckduckgo', 'none'],
                 'default': 'tavily',
                 'description': 'Primary news/web search provider used by AI analysis. QuantDinger falls back to configured providers, then GDELT and DuckDuckGo when available'
             },

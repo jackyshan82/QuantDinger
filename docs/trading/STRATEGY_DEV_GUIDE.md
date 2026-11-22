@@ -243,6 +243,8 @@ context.set_universe(pool="sp500")
 members = get_universe_stocks()
 ~~~
 
+Each <code>set_universe</code> call replaces the previous universe declaration. The last call determines whether the universe uses explicit instruments, an index, or a named pool. Subscriptions already declared keep their original instruments or reference; declare subscriptions after selecting the intended universe.
+
 Dynamic universes resolve point-in-time constituents. Do not copy today's pool members into source and then use them for a historical backtest.
 
 A dynamic universe, more than one static instrument, or <code>on_rebalance</code> normally classifies the manifest as portfolio. One static instrument normally classifies it as CTA.
@@ -1024,6 +1026,34 @@ Inspect:
 - <code>equityCurve</code>, drawdown, win rate, Profit Factor, benchmark, and excess return.
 - <code>dataProvenance</code>/<code>executionAssumptions</code>: data origin and fill model.
 
+### Alpaca historical prices for research
+
+The default US-stock history provider is yfinance. To use Alpaca, set
+`US_STOCK_BACKTEST_PROVIDER=alpaca` and `ALPACA_BACKTEST_FEED=iex` in the root
+`.env`, then restart the API and Celery workers. This selects history for
+US-stock backtests, factor research, benchmarks, and parameter evolution; live
+execution and chart quotes are unchanged.
+
+Each user must save exactly one Alpaca account under **Account → Broker Accounts**.
+Paper credentials work. Missing or multiple accounts fail instead of selecting
+another account. Credentials stay encrypted per user, and requests use only
+the historical-data API, never the order API.
+
+`iex` covers one exchange; `sip` is consolidated history and requires matching
+Alpaca entitlements. Set `ALPACA_BACKTEST_FEED=sip` explicitly to use it. Requests
+exclude the latest 15 minutes, read every response page, use `all` corporate-action
+adjustments, and isolate caches by user, credential, and feed. Provider failures
+do not fall back to Yahoo or another feed. Per-frame provenance records the
+provider, feed, and adjustment. Alpaca bars may include extended-hours activity;
+IEX and SIP price/volume coverage can differ.
+
+Alpaca stock history begins in 2016. Research workload limits, including warm-up,
+are 180 calendar days for 1-minute bars, 365 for 3-minute bars, 730 for 5-minute
+bars, and 3650 for higher timeframes. Symbol/feed availability can be shorter.
+Other markets and yfinance limits are unchanged. Price history does not supply
+financial factors such as ROE or revenue growth; prepare those separately under
+**Settings → Market Data → Fundamental data preparation**.
+
 ### Costs and execution assumptions
 
 - Commission is charged on every fill. A completed round trip deducts both allocated entry commission and exit commission from realized profit.
@@ -1244,3 +1274,11 @@ Martingale rules:
 - [ ] At least one successful backtest exists before publication.
 - [ ] Credentials, market, balance, lot size, and notifications are checked before live use.
 - [ ] Reusing existing spot or derivative inventory includes an explicit strict/advanced ownership choice and verified protected baseline.
+
+
+### US equity extended sessions
+
+USStock intraday bar-close scheduling includes pre-market and post-market on exchange-calendar trading days: 04:00–20:00 America/New_York, ending17:00 on early-close days. Boundaries denote completed candles (the first1m close is04:01). Holidays, weekends and DST follow the exchange calendar; other markets and daily execution policies are unchanged. Clock events request evaluation and do not guarantee a provider supplied a fresh candle. Strategy entry times remain explicit in strategy source. Alpaca equity orders submitted outside the regular session must be plain DAY limit orders and are sent with extended_hours=true. Market orders and broker-native bracket orders are rejected in those sessions; protections are never silently removed or converted. No overnight20:00–04:00 support is implied.
+
+
+A deployment may opt into whole US equity entry quantities using a declared integer parameter `whole_shares=1`. The live queue boundary floors new-entry/add quantities before budget validation and persistence; requests below1 share are skipped. Existing position reductions/exits retain exact quantities, including legacy fractions. This policy does not change RSI or other entry signals or retroactively change old fills.

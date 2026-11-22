@@ -246,6 +246,8 @@ def build_evidence_snapshot(payload: Mapping[str, Any]) -> dict[str, Any]:
             price.get(key),
             category="market",
             source=price_source,
+            as_of=price.get("as_of"),
+            quality_flags=price.get("quality_flags") or [],
             unit=unit,
             currency=collector.currency if unit == "price" else None,
             required=key == "price",
@@ -260,6 +262,7 @@ def build_evidence_snapshot(payload: Mapping[str, Any]) -> dict[str, Any]:
             category="market",
             source=last.get("source") or price_source,
             as_of=last.get("timestamp") or last.get("time"),
+            quality_flags=last.get("quality_flags") or [],
             unit="ohlcv",
             currency=collector.currency,
             required=True,
@@ -358,6 +361,10 @@ def build_evidence_snapshot(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     equity_datasets = {
+        "alpaca_market_snapshot": ("market.alpaca_snapshot", "alpaca"),
+        "corporate_actions": ("corporate_actions.alpaca", "alpaca"),
+        "security_profile": ("security_profile.alpaca", "alpaca"),
+        "yahoo_options": ("options.yahoo_snapshot", "yahoo_finance"),
         "sec_filings": ("filings.sec", "sec_edgar"),
         "analyst_expectations": ("expectations.analyst", "analyst_provider"),
         "options": ("options.snapshot", "options_provider"),
@@ -391,6 +398,7 @@ def build_evidence_snapshot(payload: Mapping[str, Any]) -> dict[str, Any]:
             source_url=metadata.get("url") or metadata.get("source_url"),
             as_of=metadata.get("as_of") or metadata.get("published_at") or metadata.get("date"),
             unit=metadata.get("unit") or "structured_dataset",
+            quality_flags=metadata.get("quality_flags") or [],
         )
 
     macro_payload = payload.get("macro") or {}

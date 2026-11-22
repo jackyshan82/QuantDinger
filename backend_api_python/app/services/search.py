@@ -656,7 +656,8 @@ class SearchService:
     3. 结果聚合和格式化
     """
     
-    def __init__(self):
+    def __init__(self, user_id=None):
+        self.user_id = user_id
         self._providers: List[BaseSearchProvider] = []
         self._config = {}
         self._load_config()
@@ -684,6 +685,12 @@ class SearchService:
             return
 
         provider_map: Dict[str, BaseSearchProvider] = {}
+        if self.user_id:
+            from app.services.alpaca_search import AlpacaNewsProvider
+
+            alpaca = AlpacaNewsProvider(self.user_id)
+            if alpaca.is_available:
+                provider_map["alpaca"] = alpaca
 
         tavily_keys = APIKeys.TAVILY_API_KEYS
         if tavily_keys:
@@ -718,7 +725,7 @@ class SearchService:
         if preferred:
             self._providers.append(provider_map.pop(preferred))
 
-        for key in ("tavily", "searxng", "gdelt", "serpapi", "alpha_vantage", "google", "duckduckgo"):
+        for key in ("alpaca", "tavily", "searxng", "gdelt", "serpapi", "alpha_vantage", "google", "duckduckgo"):
             provider = provider_map.pop(key, None)
             if provider:
                 self._providers.append(provider)
@@ -737,6 +744,7 @@ class SearchService:
         google_api_key = self._search_config_value('google', 'api_key', 'SEARCH_GOOGLE_API_KEY')
         google_cx = self._search_config_value('google', 'cx', 'SEARCH_GOOGLE_CX')
         configured = {
+            "Alpaca": any(p.name == "Alpaca" for p in self._providers),
             "Google": bool(google_api_key and google_cx),
             "Tavily": bool(APIKeys.TAVILY_API_KEYS),
             "SearXNG": bool(SearXNGConfig.CONFIGURED),
@@ -755,7 +763,7 @@ class SearchService:
                 "available": bool(active_available.get(name)),
                 "note": _search_provider_note(name, bool(configured.get(name)), name in active_names),
             }
-            for name in ("Tavily", "SearXNG", "GDELT", "SerpAPI", "AlphaVantage", "Google", "DuckDuckGo")
+            for name in ("Alpaca", "Tavily", "SearXNG", "GDELT", "SerpAPI", "AlphaVantage", "Google", "DuckDuckGo")
         ]
 
     def _effective_result_limit(self, requested: Optional[int]) -> int:
@@ -902,6 +910,13 @@ class SearchService:
             search_days = 2
         else:
             search_days = 1
+
+        if market == "USStock":
+            alpaca = next((p for p in self._providers if p.name == "Alpaca"), None)
+            if alpaca is not None:
+                response = alpaca.search_symbol(stock_code, max_results, max(7, search_days))
+                if response.success and response.results:
+                    return response
         
         if market == "USStock":
             query = f"{stock_name} {stock_code} stock news latest"
@@ -937,15 +952,24 @@ class SearchService:
 _search_service: Optional[SearchService] = None
 
 
-def get_search_service() -> SearchService:
+def get_search_service(user_id=None) -> SearchService:
     """获取搜索服务单例"""
     global _search_service
+    if user_id is None:
+        from flask import g, has_request_context
+
+        if has_request_context():
+            user_id = getattr(g, "user_id", None)
+    if user_id:
+        return SearchService(user_id=int(user_id))
     if _search_service is None:
         _search_service = SearchService()
     return _search_service
 
 
 def _search_provider_note(name: str, configured: bool, registered: bool) -> str:
+    if name == "Alpaca":
+        return "alpacaResearch.symbolSpecificNewsOnly" if configured else "brokerAccounts.accountUnavailable"
     """Describe why a search provider can or cannot be used."""
     if name == "Google" and not configured:
         return "Set SEARCH_GOOGLE_API_KEY and SEARCH_GOOGLE_CX to enable Google Custom Search fallback."

@@ -56,6 +56,24 @@ def test_live_cash_changes_with_position_value_and_equity():
     assert available_strategy_cash(9500, positions, candidates, 1) == 8300
 
 
+@pytest.mark.parametrize('quantity', [4.44e-16, -4.44e-16, 0, 1e-12])
+def test_live_position_view_ignores_only_engine_zero_residue(quantity):
+    rows = [dict(symbol='NVDA', side='long', size=quantity, entry_price=204)]
+    executor = SimpleNamespace(_get_current_positions=lambda *_: rows)
+    candidates = [dict(key='USStock:NVDA', symbol='NVDA', market='USStock')]
+    assert positions_by_symbol(executor, 2, candidates, {}) == {}
+    assert rows[0]['size'] == quantity
+
+
+@pytest.mark.parametrize('quantity', [1.01e-12, 1e-9, 0.0001, 13.25332184])
+def test_live_position_view_preserves_fractional_and_normal_holdings(quantity):
+    executor = SimpleNamespace(_get_current_positions=lambda *_: [
+        dict(symbol='NVDA', side='long', size=quantity, entry_price=204)])
+    candidates = [dict(key='USStock:NVDA', symbol='NVDA', market='USStock')]
+    result = positions_by_symbol(executor, 2, candidates, {})
+    assert result['USStock:NVDA']['amount'] == quantity
+
+
 def test_five_hundred_stock_portfolio_reads_positions_once():
     calls = []
     def fetch(sid, symbol):

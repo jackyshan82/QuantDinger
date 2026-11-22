@@ -492,6 +492,52 @@ def rebalance(context, data):
     assert manifest.universe.reference == "POOL:sp500"
 
 
+@pytest.mark.parametrize("previous", ['pool="us_etf"', 'index="INDEX:SP500"'])
+def test_explicit_universe_replaces_previous_dynamic_universe(previous):
+    code = f'''
+def initialize(context):
+    context.set_universe({previous})
+    g.universe = ["USStock:AAPL", "USStock:MSFT"]
+    context.set_universe(g.universe)
+    context.subscribe(frequency="1d")
+
+def handle_data(context, data):
+    pass
+'''
+    manifest = compile_strategy_v2(code).manifest
+
+    assert manifest.universe.kind == "static"
+    assert manifest.universe.reference == ""
+    assert [item.instrument_id for item in manifest.universe.instruments] == [
+        "USStock:AAPL", "USStock:MSFT",
+    ]
+    assert manifest.subscriptions[0].instruments == manifest.universe.instruments
+    assert manifest.subscriptions[0].universe_reference == ""
+
+
+@pytest.mark.parametrize("replacement, reference", [
+    ('pool="us_etf"', "POOL:us_etf"),
+    ('index="INDEX:SP500"', "INDEX:SP500"),
+])
+def test_dynamic_universe_replaces_previous_explicit_universe(replacement, reference):
+    code = f'''
+def initialize(context):
+    context.set_universe(["USStock:AAPL"])
+    context.set_universe({replacement})
+    context.subscribe(frequency="1d")
+
+def handle_data(context, data):
+    pass
+'''
+    manifest = compile_strategy_v2(code).manifest
+
+    assert manifest.universe.kind == "dynamic"
+    assert manifest.universe.reference == reference
+    assert manifest.universe.instruments == ()
+    assert manifest.subscriptions[0].instruments == ()
+    assert manifest.subscriptions[0].universe_reference == reference
+
+
 def test_manifest_preserves_declared_leverage_limit():
     code = """
 def initialize(context):

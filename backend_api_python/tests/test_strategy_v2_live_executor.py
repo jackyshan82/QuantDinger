@@ -8,6 +8,31 @@ from app.services.strategy_v2 import OrderIntent
 from app.services.trading_executor import TradingExecutor, live_history_days
 
 
+@pytest.mark.parametrize('action,quantity,expected', [
+    ('open_long', 5.582977594674, 5.0), ('add_long', 1.9, 1.0),
+    ('open_long', .9, None), ('close_long', 4.618934387, 4.618934387),
+])
+def test_whole_share_policy_rounds_before_queue_but_preserves_closes(action, quantity, expected):
+    executor = TradingExecutor()
+    executor._load_strategy = lambda _: {'user_id': 1}
+    captured = []
+    class Gateway:
+        def submit(self, request):
+            captured.append(request)
+            return 123
+    executor.order_gateway = Gateway()
+    executor._execute_signal(
+        strategy_id=2, symbol='NVDA', signal_type=action,
+        script_base_qty=quantity, current_price=100, market_type='spot',
+        market_category='USStock', execution_mode='signal', leverage=1,
+        initial_capital=1000, trading_config={'params': {'whole_shares': 1}},
+    )
+    if expected is None:
+        assert captured == []
+    else:
+        assert captured[0].quantity == expected
+
+
 def test_load_source_upgrades_legacy_robot_allocations_at_runtime(monkeypatch):
     legacy = """AMOUNTS = [100.0, 300.0]
 INITIAL_POSITION_PCT = 0.2

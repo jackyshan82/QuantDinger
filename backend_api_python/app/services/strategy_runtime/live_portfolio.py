@@ -76,6 +76,11 @@ def positions_by_symbol(executor, strategy_id, candidates, strategy):
             if explicit_legs else rows[:1]
         )
         for row in selected_rows:
+            # Match the order engine's zero-quantity tolerance so floating-point
+            # fill residue cannot keep strategy entry conditions in "holding".
+            # Preserve the durable ledger and all tradeable fractional holdings.
+            if abs(float(row.get('size') or 0)) <= 1e-12:
+                continue
             side = 'short' if row.get('side') == 'short' else 'long'
             key = member['key'] + (f'::{side}' if explicit_legs else '')
             output[key] = dict(

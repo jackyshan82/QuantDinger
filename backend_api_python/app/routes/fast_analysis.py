@@ -321,7 +321,7 @@ def get_professional_report_data_sources():
 
     items = []
     for provider in providers:
-        status = provider_configuration_status(provider)
+        status = provider_configuration_status(provider, user_id=g.user_id)
         items.append({
             'key': provider.key,
             'name': provider.name,

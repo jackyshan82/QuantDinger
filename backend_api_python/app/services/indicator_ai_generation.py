@@ -73,20 +73,18 @@ def generate_indicator_code_candidate(
     llm = LLMService()
     current_provider = llm.provider
     current_model = llm.get_code_generation_model()
-    current_api_key = llm.get_api_key()
     base_url = llm.get_base_url()
     logger.info(
         "AI Code Generation - Provider: %s, Model: %s, Base URL: %s, "
-        "API Key configured: %s",
+        "Provider configured: %s",
         current_provider.value,
         current_model,
         base_url,
-        bool(current_api_key),
+        llm.is_configured(),
     )
 
-    if not current_api_key:
-        logger.warning("No LLM API key configured, using template code")
-        return template_factory(), {"executor": "template", "operation": "generate_candidate"}
+    if not llm.is_configured():
+        raise ValueError("indicator_ai_not_configured")
 
     context_text = _context_block(context)
     user_prompt = prompt + context_text
@@ -182,10 +180,13 @@ def generate_indicator_code_candidate(
                 "operation": "generate_candidate",
                 "patch_error": str(exc),
             }
-            code = _strip_code_fences(content) or template_factory()
+            code = _strip_code_fences(content)
     else:
         plan = {"executor": "model", "operation": "generate_candidate"}
-        code = _strip_code_fences(content) or template_factory()
+        code = _strip_code_fences(content)
+
+    if not code.strip():
+        raise ValueError("indicator_ai_empty_response")
 
     # A model-level fallback is otherwise only visible in the provider dashboard.
     plan["model"] = llm.last_model_used

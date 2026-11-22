@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from app.services.alpaca_history import AlpacaHistoryError
 from app.data_sources.errors import MarketDataUnavailableError
 from app.services.backtest.metrics import (
     benchmark_level_curve,
@@ -226,7 +227,7 @@ class StrategyV2BacktestService:
         limit = strategy_universe_symbol_limit(normalized_frequency)
         if len(candidates) > limit:
             raise StrategyV2ContractError("strategyV2.universeTooLarge")
-        candidates = [{**item, "key": _member_key(item)} for item in candidates]
+        candidates = [{**item, "key": _member_key(item), "_data_user_id": user_id} for item in candidates]
         _attach_catalog_products(candidates)
 
         minimum_symbols = 3
@@ -803,14 +804,9 @@ class StrategyV2BacktestService:
                         int((end_date - start_date).total_seconds()),
                         max_bars=3000,
                     )[0]
-                    benchmark_frame = self.frame_fetcher(
-                        benchmark_spec.market,
-                        benchmark_spec.symbol,
-                        benchmark_frequency,
-                        start_date,
-                        end_date,
-                        market_type=benchmark_spec.market_type,
-                        exchange_id=benchmark_spec.exchange_id,
+                    benchmark_frame = self._fetch_member_frame(
+                        {**_instrument_member(benchmark_spec), "_data_user_id": user_id},
+                        benchmark_frequency, start_date, end_date,
                     )
                 except Exception as exc:
                     benchmark_error = str(exc)[:240]
@@ -965,7 +961,8 @@ class StrategyV2BacktestService:
         end_date: datetime,
     ) -> tuple[list[dict[str, Any]], int | None]:
         if manifest.universe.kind == "static":
-            return [_instrument_member(item) for item in manifest.universe.instruments], None
+            return [{**_instrument_member(item), "_data_user_id": user_id}
+                    for item in manifest.universe.instruments], None
 
         reference = manifest.universe.reference
         universe = next((item for item in self.universe_service.list_universes(user_id) if _universe_matches(item, reference)), None)
@@ -982,7 +979,25 @@ class StrategyV2BacktestService:
         limit = strategy_universe_symbol_limit(manifest.driving_frequency)
         if len(members) > limit:
             raise StrategyV2ContractError("strategyV2.universeTooLarge")
-        return [{**item, "key": _member_key(item)} for item in members], universe_id
+        return [{**item, "key": _member_key(item), "_data_user_id": user_id}
+                for item in members], universe_id
+
+    def _fetch_member_frame(self, member, frequency, start_date, end_date):
+        if self.frame_fetcher is load_strategy_frame and member["market"] == "USStock":
+            from app.services.alpaca_history import load_alpaca_frame, stock_backtest_provider
+
+            if stock_backtest_provider() == "alpaca":
+                return load_alpaca_frame(
+                    member.get("_data_user_id"), member["symbol"], frequency, start_date, end_date,
+                    live=bool(member.get("_live_market_data", False)),
+                )
+        return self.frame_fetcher(
+            member["market"], member["symbol"], frequency, start_date, end_date,
+            market_type=member.get("market_type") or "",
+            exchange_id=member.get("exchange_id") or "",
+            instrument_id=member.get("instrument_id") or "",
+            api_family=member.get("api_family") or "",
+        )
 
     def fetch_frames(
         self,
@@ -995,17 +1010,7 @@ class StrategyV2BacktestService:
         skipped: list[dict[str, Any]] = []
 
         def fetch(member: dict[str, Any]):
-            frame = self.frame_fetcher(
-                member["market"],
-                member["symbol"],
-                frequency,
-                start_date,
-                end_date,
-                market_type=member.get("market_type") or "",
-                exchange_id=member.get("exchange_id") or "",
-                instrument_id=member.get("instrument_id") or "",
-                api_family=member.get("api_family") or "",
-            )
+            frame = self._fetch_member_frame(member, frequency, start_date, end_date)
             return member, frame
 
         workers = min(8, max(1, len(candidates)))
@@ -1022,6 +1027,8 @@ class StrategyV2BacktestService:
                         continue
                     frames[member["key"]] = frame
                 except Exception as exc:
+                    if isinstance(exc, AlpacaHistoryError):
+                        raise
                     if isinstance(exc, MarketDataUnavailableError):
                         skipped.append({
                             "symbol": member.get("key") or "",
@@ -1046,17 +1053,7 @@ class StrategyV2BacktestService:
         skipped: list[dict[str, Any]] = []
 
         def fetch(member: dict[str, Any], frequency: str):
-            frame = self.frame_fetcher(
-                member["market"],
-                member["symbol"],
-                frequency,
-                start_dates[frequency],
-                end_date,
-                market_type=member.get("market_type") or "",
-                exchange_id=member.get("exchange_id") or "",
-                instrument_id=member.get("instrument_id") or "",
-                api_family=member.get("api_family") or "",
-            )
+            frame = self._fetch_member_frame(member, frequency, start_dates[frequency], end_date)
             return member, frequency, frame
 
         requests = [
@@ -1086,6 +1083,8 @@ class StrategyV2BacktestService:
                         continue
                     bundles[frequency][member["key"]] = frame
                 except Exception as exc:
+                    if isinstance(exc, AlpacaHistoryError):
+                        raise
                     item: dict[str, Any] = {
                         "symbol": member.get("key") or "",
                         "frequency": frequency,
@@ -1396,6 +1395,9 @@ def _frame_provenance(
         "firstBar": str(pd.Timestamp(frame.index.min())) if not frame.empty else "",
         "lastBar": str(pd.Timestamp(frame.index.max())) if not frame.empty else "",
         "contentHash": fingerprint,
+        **({"provider": frame.attrs["provider"], "feed": frame.attrs.get("feed"),
+            "adjustment": frame.attrs.get("adjustment")}
+           if frame.attrs.get("provider") else {}),
         **snapshot,
     }
 

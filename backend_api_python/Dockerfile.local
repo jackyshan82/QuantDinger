@@ -1,0 +1,6 @@
+# Reuse installed dependencies while keeping runtime code and data in sync.
+ARG RUNTIME_IMAGE=ghcr.io/openbyteinc/quantdinger-backend:5.6.1
+FROM ${RUNTIME_IMAGE}
+COPY app /app/app
+COPY scripts /app/scripts
+COPY migrations /app/migrations

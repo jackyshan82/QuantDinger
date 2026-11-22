@@ -17,6 +17,35 @@ Scopes are `R` for reads, `W` for saved artifacts and deployment configuration, 
 
 Every mutating W/B/N/T request requires a unique `Idempotency-Key` header. Reuse the same key only when retrying the exact same method, route, query, and body. The gateway atomically reserves the key, returns a stored completed response on replay, and rejects concurrent or mismatched reuse.
 
+## Local project connection
+
+When the operator has configured this WSL installation, the connection lives at
+`~/.config/quantdinger/agent.env`, outside Git, with directory mode `0700` and file
+mode `0600`. It contains `QUANTDINGER_BASE_URL` and `QUANTDINGER_AGENT_TOKEN`.
+Do not display or copy its contents. Same-user agents and worktrees can load it:
+
+```bash
+python scripts/with-agent-env.py python - <<'PY'
+import json, os, urllib.request
+request = urllib.request.Request(
+    os.environ["QUANTDINGER_BASE_URL"].rstrip("/") + "/api/agent/v1/whoami",
+    headers={"Authorization": "Bearer " + os.environ["QUANTDINGER_AGENT_TOKEN"]},
+)
+client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with client.open(request, timeout=15) as response:
+    print(json.dumps(json.load(response), ensure_ascii=False))
+PY
+```
+
+Verify the returned identity and restrictions before other calls. Run an installed
+MCP server with `python scripts/with-agent-env.py quantdinger-mcp`; see
+[MCP setup](MCP_SETUP.md). Explicit environment credentials take precedence; use
+`QUANTDINGER_AGENT_ENV` to select a different private configuration file.
+For a new worktree, ensure these instruction files and the launcher are present;
+uncommitted files are not automatically copied. Another user, machine, or
+container needs its own authorized credential provisioning. Possession of this
+connection does not authorize new orders or live deployment.
+
 ## Strategy API V2
 
 Executable strategies use Strategy API V2. Code defines `initialize(context)`, declares its universe and subscriptions, and provides `handle_data`, `on_rebalance`, or a scheduled callback. Markets, instruments, frequencies, dependencies, warmup, and leverage policy come from the compiled manifest.

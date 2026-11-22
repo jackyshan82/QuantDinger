@@ -5,6 +5,12 @@
 
 A QuantDinger indicator is a Python chart program that runs in the Indicator IDE. It reads the current K-line DataFrame, calculates aligned series, and returns plots, markers, and sparse chart layers through <code>output</code>.
 
+AI generation uses the configured provider's authentication method, including
+Codex login without an API key. If generation fails or returns empty content,
+the IDE reports an error and does not apply a generic indicator template as the
+requested result. Automatic code checks validate execution and output structure;
+review the formula and marker labels against your original request as well.
+
 The most important boundary is: **an indicator is for chart analysis, not trade execution.**
 
 An indicator cannot place orders, backtest, run live trading, read an account, manage positions, enable leverage, or execute stop-loss/take-profit rules. To trade an idea, convert its visual signals into a Strategy API V2 strategy, then verify, backtest, and deploy that strategy separately.

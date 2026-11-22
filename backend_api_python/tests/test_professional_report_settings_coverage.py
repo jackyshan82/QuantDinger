@@ -16,6 +16,7 @@ def test_every_active_keyed_report_provider_is_configurable_in_settings():
         provider
         for provider in PROVIDER_CATALOG
         if provider.integration_status == "active" and not provider.keyless
+        and provider.credential_source == "environment"
     ]
 
     missing = {
@@ -24,6 +25,14 @@ def test_every_active_keyed_report_provider_is_configurable_in_settings():
         if not set(provider.api_env_keys).intersection(setting_keys)
     }
     assert missing == {}
+
+
+def test_alpaca_uses_owned_account_configuration_instead_of_global_keys():
+    provider = next(item for item in PROVIDER_CATALOG if item.key == "alpaca")
+    assert provider.integration_status == "active"
+    assert provider.credential_source == "alpaca_account"
+    assert not provider.keyless and not provider.api_env_keys
+    assert {"market_data", "news", "options", "corporate_actions"}.issubset(provider.capabilities)
 
 
 def test_professional_report_runtime_controls_are_exposed_in_settings():

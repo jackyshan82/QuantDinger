@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from pathlib import Path
+import ast
 
 from app.services import search as search_module
 from app.services.search_models import SearchResponse, SearchResult
@@ -26,7 +27,17 @@ def _set_search_env(monkeypatch, **overrides):
 
 def test_settings_schema_exposes_only_supported_search_providers():
     source = (Path(__file__).resolve().parents[1] / "app" / "routes" / "settings.py").read_text(encoding="utf-8")
-    assert "'options': ['tavily', 'searxng', 'gdelt', 'serpapi', 'google', 'duckduckgo', 'none']" in source
+    provider_fields = [
+        node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Dict)
+        and any(isinstance(key, ast.Constant) and key.value == 'key'
+                and isinstance(value, ast.Constant) and value.value == 'SEARCH_PROVIDER'
+                for key, value in zip(node.keys, node.values))
+    ]
+    assert len(provider_fields) == 1
+    options = next(value for key, value in zip(provider_fields[0].keys, provider_fields[0].values)
+                   if isinstance(key, ast.Constant) and key.value == 'options')
+    values = [item['value'] if isinstance(item, dict) else item for item in ast.literal_eval(options)]
+    assert values == ['alpaca', 'tavily', 'searxng', 'gdelt', 'serpapi', 'google', 'duckduckgo', 'none']
     assert "SEARCH_BING_API_KEY" not in source
 
 

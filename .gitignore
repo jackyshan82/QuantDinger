@@ -37,7 +37,11 @@ agent-tools/
 .cache/
 .codex/
 .codex-logs/
-.agents/
+# Keep local agent state private while allowing the shared project skill.
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/quantdinger-research/
 .local_tools/
 outputs/
 .pytest_cache/
@@ -91,6 +95,7 @@ backend_api_python/dist/
 
 # Local engineering notes, acceptance evidence, and generated audit reports.
 # Product and contributor documentation belongs in the repository-level docs/ tree.
+/artifacts/
 backend_api_python/docs/
 backend_api_python/reports/
 

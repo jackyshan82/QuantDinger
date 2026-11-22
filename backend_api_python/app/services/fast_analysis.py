@@ -63,6 +63,7 @@ class FastAnalysisService(FastAnalysisScoringMixin):
         include_news: bool = True,
         timeout: int = 45,
         recovery_target: Optional[Dict[str, Any]] = None,
+        user_id: int | None = None,
     ) -> Dict[str, Any]:
         """
         使用统一的数据采集器收集市场数据
@@ -80,6 +81,7 @@ class FastAnalysisService(FastAnalysisScoringMixin):
             include_macro=include_macro,
             include_news=include_news,
             timeout=timeout,  # 增加超时时间，确保数据收集完成
+            **({"user_id": user_id} if user_id else {}),
         )
         if recovery_target is not None:
             self._backfill_primary_enrichment(recovery_target, collected)
@@ -708,6 +710,7 @@ class FastAnalysisService(FastAnalysisScoringMixin):
                 primary_tf,
                 include_macro=True,
                 include_news=True,
+                user_id=user_id,
             )
             primary_data["research_mode"] = research_mode
 
@@ -754,7 +757,7 @@ class FastAnalysisService(FastAnalysisScoringMixin):
                         tf_norm,
                         include_macro=False,
                         include_news=False,
-                        timeout=25, recovery_target=primary_data,
+                        timeout=25, recovery_target=primary_data, user_id=user_id,
                     )
 
                 current_price_tf = _extract_current_price(d_tf) or 0.0
@@ -799,7 +802,7 @@ class FastAnalysisService(FastAnalysisScoringMixin):
                         "1W",
                         include_macro=False,
                         include_news=False,
-                        timeout=25, recovery_target=primary_data,
+                        timeout=25, recovery_target=primary_data, user_id=user_id,
                     )
                     cp_1w = _extract_current_price(d_1w) or 0.0
                     obj_1w = self._calculate_objective_score(d_1w, cp_1w)
@@ -822,7 +825,7 @@ class FastAnalysisService(FastAnalysisScoringMixin):
                         "1H",
                         include_macro=False,
                         include_news=False,
-                        timeout=18, recovery_target=primary_data,
+                        timeout=18, recovery_target=primary_data, user_id=user_id,
                     )
                     cp_1h = _extract_current_price(d_1h) or 0.0
                     obj_1h = self._calculate_objective_score(d_1h, cp_1h)

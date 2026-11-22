@@ -116,10 +116,16 @@ class LLMProvider(Enum):
     CUSTOM = "custom"
     MINIMAX = "minimax"
     LITELLM = "litellm"
+    CODEX = "codex"
 
 
 # Provider configurations
 PROVIDER_CONFIGS = {
+    LLMProvider.CODEX: {
+        "base_url": "http://codex-bridge:8765",
+        "default_model": "",
+        "fallback_model": "",
+    },
     LLMProvider.OPENROUTER: {
         "base_url": "https://openrouter.ai/api/v1",
         "default_model": "openai/gpt-5.4",
@@ -299,6 +305,10 @@ class LLMService:
     def is_configured(self, provider: LLMProvider = None) -> bool:
         """Return whether the provider has enough configuration to make a request."""
         p = provider or self.provider
+        if p == LLMProvider.CODEX:
+            from app.services.codex_llm import configured
+
+            return configured()
         if (self.get_api_key(p) or "").strip():
             return True
         if p == LLMProvider.CUSTOM:
@@ -327,6 +337,14 @@ class LLMService:
         errors and request exceptions cannot leak the key.
         """
         p = provider or self.provider
+        if p == LLMProvider.CODEX:
+            from app.services.codex_llm import bridge_request
+
+            try:
+                bridge_request("/health", timeout=10)
+                return True, "codexBridge.ready"
+            except ValueError as exc:
+                return False, str(exc)
         model = self.get_default_model(p)
         if not self.is_configured(p):
             return False, f"{p.value}: API key is not configured"
@@ -1137,6 +1155,7 @@ class LLMService:
             
             # Map OpenRouter prefixes to providers
             prefix_to_provider = {
+                'codex': LLMProvider.CODEX,
                 'openai': LLMProvider.OPENAI,
                 'google': LLMProvider.GOOGLE,
                 'deepseek': LLMProvider.DEEPSEEK,
@@ -1241,6 +1260,23 @@ class LLMService:
                     logger.debug(f"Auto-detected provider '{provider.value}' from model '{model}'")
         
         p = provider or self.provider
+        if p == LLMProvider.CODEX:
+            from app.services.codex_llm import bridge_request
+
+            codex_model = self._normalize_model_for_provider(model, p)
+            timeout = max(1, min(300, int(os.getenv("CODEX_TIMEOUT", "180"))))
+            if timeout_seconds is not None:
+                timeout = max(1, min(timeout, float(timeout_seconds)))
+            result = bridge_request("/generate", {
+                "messages": messages, "model": codex_model, "json_mode": use_json_mode,
+                "timeout": timeout,
+            }, timeout=timeout)
+            content = result.get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("codexBridge.invalidResponse")
+            used_model = result.get("model") or codex_model or "codex-default"
+            self._record_model_use(used_model, codex_model or used_model, p)
+            return content
         api_key = (self.get_api_key(p) or "").strip()
         base_url = (self.get_base_url(p) or "").strip()
         if not self.is_configured(p):
@@ -1445,6 +1481,11 @@ class LLMService:
     def stream_llm_api(self, messages: list, model: str = None, temperature: float = 0.7):
         """Stream LLM response deltas for providers with OpenAI-compatible streaming."""
         p = self.provider
+        if p == LLMProvider.CODEX:
+            # CLI structured output is delivered as one final text chunk.
+            yield self.call_llm_api(messages, model=model, temperature=temperature,
+                                    use_json_mode=False, provider=p)
+            return
         api_key = (self.get_api_key(p) or "").strip()
         base_url = (self.get_base_url(p) or "").strip()
         if not self.is_configured(p):

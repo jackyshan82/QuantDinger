@@ -1,0 +1,42 @@
+# Opt-in local ChatGPT/Codex subscription integration. No host port is published.
+# Use with docker-compose.yml or docker-compose.ghcr.yml, with a backend image
+# containing the Codex provider. See docs/deployment/CODEX_LOGIN.md.
+services:
+  codex-bridge:
+    image: ${BACKEND_LOCAL_IMAGE:-quantdinger-backend:local}
+    container_name: quantdinger-codex-bridge
+    entrypoint: ["python", "/opt/quantdinger/codex_bridge.py"]
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
+    environment:
+      HOME: /home/quantdinger
+      CODEX_HOME: /home/quantdinger/.codex
+      CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?Set a random internal bridge token}
+    volumes:
+      - ${CODEX_CLI_BINARY:?Set the absolute native Linux Codex binary path}:/usr/local/bin/codex:ro
+      - ./scripts/codex_bridge.py:/opt/quantdinger/codex_bridge.py:ro
+      - codex_auth:/home/quantdinger/.codex
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request;
+          request = urllib.request.Request('http://127.0.0.1:8765/health', headers={'Authorization': 'Bearer ' + os.environ['CODEX_BRIDGE_TOKEN']});
+          urllib.request.urlopen(request, timeout=5).close()
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - quantdinger-network
+
+volumes:
+  codex_auth:

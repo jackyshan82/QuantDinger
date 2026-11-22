@@ -90,6 +90,10 @@ def build_equity_features(
 
     if market == "USStock":
         market_specific = {
+            "corporate_actions": payload.get("corporate_actions") or [],
+            "security_profile": payload.get("security_profile") or {},
+            "alpaca_market_snapshot": payload.get("alpaca_market_snapshot") or {},
+            "supplementary_options": payload.get("yahoo_options") or {},
             "filings": payload.get("sec_filings") or [],
             "analyst_expectations": payload.get("analyst_expectations") or {},
             "options": payload.get("options") or {},
@@ -99,7 +103,7 @@ def build_equity_features(
         missing = [
             key
             for key, value in market_specific.items()
-            if not value
+            if not value and key not in {"corporate_actions", "security_profile", "alpaca_market_snapshot", "supplementary_options"}
         ]
     elif market == "HKStock":
         security_profile = payload.get("hk_security_profile") or {}

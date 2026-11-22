@@ -132,8 +132,14 @@ def load_live_frequency_frames(
         - timedelta(days=live_history_days(frequency, manifest.warmup_bars, candidates))
         for frequency in manifest.frequencies
     }
+    # Keep fresh runtime data separate from delayed research history without
+    # mutating the persisted universe or changing its tenant/feed identity.
+    fetch_candidates = [
+        {**member, "_live_market_data": True} if member.get("market") == "USStock" else member
+        for member in candidates
+    ]
     bundles, skipped = service.fetch_frequency_frames(
-        candidates,
+        fetch_candidates,
         manifest.frequencies,
         start_dates,
         end_date,

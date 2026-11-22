@@ -163,8 +163,10 @@ class DiscoveryContext:
             raise StrategyV2ContractError("strategyV2.universeRequired")
         if isinstance(source, str) and is_index_reference(source):
             self.universe_reference = normalize_index_reference(source)
+            self.instruments = []
             return
         self.instruments = _parse_many(source)
+        self.universe_reference = ""
 
     def set_benchmark(self, value: object) -> None:
         self.benchmark = parse_instrument(value)

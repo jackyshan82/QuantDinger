@@ -1,0 +1,4 @@
+interface:
+  display_name: "QuantDinger Research"
+  short_description: "Run native factor studies, evolution and backtests"
+  default_prompt: "Use $quantdinger-research to resume this project's research from its handoff, verify current records, and use native factor research, strategy evolution and backtests."

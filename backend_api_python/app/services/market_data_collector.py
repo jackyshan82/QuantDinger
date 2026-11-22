@@ -113,7 +113,8 @@ class MarketDataCollector:
         timeframe: str = "1D",
         include_macro: bool = True,
         include_news: bool = True,
-        timeout: int = 30
+        timeout: int = 30,
+        user_id: int | None = None,
     ) -> Dict[str, Any]:
         """
         采集所有市场数据
@@ -174,11 +175,15 @@ class MarketDataCollector:
             }
         }
         
-        with NonBlockingThreadPoolExecutor(max_workers=5 if market in {'USStock', 'HKStock'} else 4) as executor:
+        owned = {"user_id": user_id} if user_id else {}
+        workers = 6 if market == "USStock" and user_id else 5 if market in {"USStock", "HKStock"} else 4
+        with NonBlockingThreadPoolExecutor(max_workers=workers) as executor:
             core_futures = {
-                executor.submit(self._get_price, market, symbol): "price",
-                executor.submit(self._get_kline, market, symbol, timeframe, 60): "kline",
+                executor.submit(self._get_price, market, symbol, **owned): "price",
+                executor.submit(self._get_kline, market, symbol, timeframe, 60, **owned): "kline",
             }
+            if market == "USStock" and user_id:
+                core_futures[executor.submit(self._get_alpaca_research, user_id, symbol)] = "alpaca_research"
             
             if market in ('USStock', 'CNStock', 'HKStock'):
                 core_futures[executor.submit(self._get_fundamental, market, symbol)] = "fundamental"
@@ -200,7 +205,12 @@ class MarketDataCollector:
                 try:
                     result = future.result()
                     if result:
-                        if key in {"us_research", "hk_research", "cross_asset_research"}:
+                        if key == "alpaca_research":
+                            for item in ("alpaca_options", "alpaca_market_snapshot", "corporate_actions", "security_profile"):
+                                if result.get(item):
+                                    data[item] = result[item]
+                            data["_meta"]["alpaca_provider_status"] = result.get("status") or {}
+                        elif key in {"us_research", "hk_research", "cross_asset_research"}:
                             research_keys = (
                                 (
                                     "sec_filings", "analyst_expectations", "options",
@@ -273,6 +283,11 @@ class MarketDataCollector:
                         if key not in data["_meta"]["failed_items"]:
                             data["_meta"]["failed_items"].append(key)
         
+        if data.get("alpaca_options"):
+            if data.get("options"):
+                data["yahoo_options"] = data["options"]
+            data["options"] = data["alpaca_options"]
+
         if data.get("kline"):
             data["indicators"] = self._calculate_indicators(data["kline"])
             data["_meta"]["success_items"].append("indicators")
@@ -309,7 +324,7 @@ class MarketDataCollector:
                 if data.get("company"):
                     company_name = data["company"].get("name")
                 
-                news_result = self._get_news(market, symbol, company_name, timeout=8)
+                news_result = self._get_news(market, symbol, company_name, timeout=8, **owned)
                 data["news"] = news_result.get("news", [])
                 data["sentiment"] = news_result.get("sentiment", {})
                 
@@ -361,10 +376,17 @@ class MarketDataCollector:
             return {}
     
     
-    def _get_price(self, market: str, symbol: str) -> Optional[Dict[str, Any]]:
+    def _get_price(self, market: str, symbol: str, user_id=None) -> Optional[Dict[str, Any]]:
         """
         获取实时价格 - 使用 kline_service (与自选列表一致)
         """
+        if market == "USStock" and user_id and self._alpaca_enabled():
+            try:
+                from app.data_providers.alpaca_research import AlpacaResearch
+
+                return AlpacaResearch(user_id).price(symbol)
+            except Exception as exc:
+                logger.info("Alpaca report price unavailable: %s", type(exc).__name__)
         try:
             price_data = self.kline_service.get_realtime_price(market, symbol, force_refresh=True)
             if price_data and price_data.get('price', 0) > 0:
@@ -417,11 +439,20 @@ class MarketDataCollector:
         return None
     
     def _get_kline(
-        self, market: str, symbol: str, timeframe: str, limit: int = 60
+        self, market: str, symbol: str, timeframe: str, limit: int = 60, user_id=None,
     ) -> Optional[List[Dict[str, Any]]]:
         """
         获取K线数据 - 使用 DataSourceFactory (与K线模块一致)
         """
+        if market == "USStock" and user_id and self._alpaca_enabled():
+            try:
+                from app.data_providers.alpaca_research import AlpacaResearch
+
+                rows = AlpacaResearch(user_id).bars(symbol, timeframe, limit)
+                if rows:
+                    return rows
+            except Exception as exc:
+                logger.info("Alpaca report bars unavailable: %s", type(exc).__name__)
         try:
             klines = DataSourceFactory.get_kline(market, symbol, timeframe, limit)
             if klines and len(klines) > 0:
@@ -430,6 +461,53 @@ class MarketDataCollector:
             logger.warning(f"Kline fetch failed for {market}:{symbol}: {e}")
         return None
     
+    @staticmethod
+    def _alpaca_enabled():
+        return os.getenv("ALPACA_REPORT_ENABLED", "true").strip().lower() in {"true", "1", "yes"}
+
+    def _get_alpaca_research(self, user_id, symbol):
+        from app.data_providers.alpaca_research import AlpacaResearch
+
+        result = {"status": {"account_configured": False, "available": [], "errors": {}}}
+        if not self._alpaca_enabled():
+            return result
+        try:
+            client = AlpacaResearch(user_id)
+            result["status"]["account_configured"] = True
+        except Exception:
+            return result
+        snapshot = {}
+        try:
+            snapshot = client.snapshot(symbol)
+            result["alpaca_market_snapshot"] = {**snapshot, "source": "alpaca_" + client.feed,
+                                                "feed": client.feed, "as_of": (snapshot.get("latestTrade") or {}).get("t")}
+        except Exception as exc:
+            result["status"]["errors"]["market_snapshot"] = str(exc)
+        spot = (snapshot.get("latestTrade") or {}).get("p")
+        jobs = {"alpaca_options": lambda: client.options(symbol, spot),
+                "corporate_actions": lambda: client.corporate_actions(symbol),
+                "security_profile": lambda: {**client.security_profile(symbol), "source": "alpaca",
+                                              "as_of": datetime.now(timezone.utc).isoformat()}}
+        with NonBlockingThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(call): name for name, call in jobs.items()}
+            try:
+                for future in as_completed(futures, timeout=25):
+                    name = futures[future]
+                    try:
+                        value = future.result()
+                        if value:
+                            result[name] = value
+                            result["status"]["available"].append(name)
+                        else:
+                            result["status"].setdefault("empty", []).append(name)
+                    except Exception as exc:
+                        result["status"]["errors"][name] = str(exc)
+            except TimeoutError:
+                for future, name in futures.items():
+                    if not future.done():
+                        result["status"]["errors"][name] = "alpacaResearch.timeout"
+        return result
+
     def _calculate_indicators(self, klines: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate local technical indicators for market analysis."""
         try:
@@ -2493,7 +2571,7 @@ class MarketDataCollector:
     
     
     def _get_news(
-        self, market: str, symbol: str, company_name: str = None, timeout: int = 8
+        self, market: str, symbol: str, company_name: str = None, timeout: int = 8, user_id=None,
     ) -> Dict[str, Any]:
         """
         获取新闻和情绪数据
@@ -2505,6 +2583,13 @@ class MarketDataCollector:
         """
         news_list = []
         sentiment = {}
+        if market == "USStock" and user_id and self._alpaca_enabled():
+            try:
+                from app.data_providers.alpaca_research import AlpacaResearch
+
+                news_list.extend(AlpacaResearch(user_id).news(symbol))
+            except Exception:
+                sentiment["alpaca_news_status"] = "alpacaResearch.newsUnavailable"
         
         if self._finnhub_client:
             try:
@@ -2565,7 +2650,7 @@ class MarketDataCollector:
             }
         
         if len(news_list) < 5:
-            search_news = self._get_news_from_search(market, symbol, company_name)
+            search_news = self._get_news_from_search(market, symbol, company_name, **({"user_id": user_id} if user_id else {}))
             news_list.extend(search_news)
         
         # Broad global headlines are disabled by default. They are useful as
@@ -2595,7 +2680,7 @@ class MarketDataCollector:
         }
     
     def _get_news_from_search(
-        self, market: str, symbol: str, company_name: str = None
+        self, market: str, symbol: str, company_name: str = None, user_id=None,
     ) -> List[Dict[str, Any]]:
         """
         从搜索引擎获取新闻
@@ -2606,7 +2691,7 @@ class MarketDataCollector:
         
         try:
             from app.services.search import get_search_service
-            search_service = get_search_service()
+            search_service = get_search_service(user_id=user_id) if user_id else get_search_service()
             
             if not search_service.is_available:
                 return news_list

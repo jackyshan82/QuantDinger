@@ -9,6 +9,12 @@
 3. [Cursor MCP 配置示例](cursor-mcp.example.json)：使用可替换地址与 Token 占位符的最小配置。
 4. [Agent OpenAPI](agent-openapi.json)：查看 `/api/agent/v1` 的机器可读契约。
 5. [API 约定](../architecture/API_CONVENTIONS.md)（英文）：理解响应、认证和接口分层。
+6. [项目研究 skill](../../.agents/skills/quantdinger-research/SKILL.md)：使用原生因子研究、策略进化和回测。
+7. [本地研究交接](RESEARCH_HANDOFF_CN.md)：查看本轮记录、结果和新 agent 接手方式；使用编号前先核对当前数据库。
+8. [多 agent 研究分工](RESEARCH_TEAM_CN.md)：使用 Orca 监督因子研究、策略研发和独立验证。
+9. [研究股票池准备](../trading/RESEARCH_UNIVERSE_CN.md)：从原生母池生成可审计名单并保存私有候选池。
+
+本地 WSL 项目的已授权 agent 请使用[本地连接示例](AGENT_QUICKSTART_CN.md#本地项目连接)。Codex、Claude Code、Gemini CLI 和已授权 Orca worker 共用项目指引及配置位置；令牌本身保存在仓库外。已经运行的 agent 应在下一检查点重新读取更新后的指引。
 
 ## 权限模型
 

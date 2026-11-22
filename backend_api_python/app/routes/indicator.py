@@ -920,7 +920,7 @@ def ai_generate():
         from app.services.llm import LLMService
 
         llm = LLMService()
-        if not llm.get_api_key():
+        if not llm.is_configured():
             return _indicator_discussion_fallback(existing, context, lang)
 
         discussion_system = """You are QuantDinger's indicator-code reviewer.
@@ -1037,8 +1037,7 @@ If the question actually requests a code modification, explain what should chang
 
         llm = LLMService()
         current_model = llm.get_code_generation_model()
-        current_api_key = llm.get_api_key()
-        if not current_api_key:
+        if not llm.is_configured():
             return bad_code
 
         issues_text = _format_validation_issues(validation)
@@ -1236,6 +1235,13 @@ If the question actually requests a code modification, explain what should chang
                 return
 
         code_text, debug_info, edit_plan = _generate_final_code()
+
+        # A generic starter is not a completion of the user's indicator request.
+        # Keep the editor and candidate history intact when model generation fails.
+        if edit_plan.get("executor") == "template":
+            yield "data: " + _sse_json({"error": "indicator_ai_generation_failed"}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # Signal the template fallback to the client; otherwise a failed model
         # call is indistinguishable from a successful template-shaped answer.

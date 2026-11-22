@@ -20,6 +20,14 @@ The end-user installers live at the repository root:
 | `check_docs.py` | Validate documentation structure, local links, code fences, and referenced assets. | Keep |
 | `check_mojibake.py` | Detect common text-encoding corruption in tracked files. | Keep |
 | `check_version.py` | Verify version fallback files stay aligned; used by CI. | Keep |
+| `local-stack.sh` | Start/check the complete local stack, including strategy runtimes, Celery jobs and the Codex bridge. | Local Codex setup required |
+| `with-agent-env.py` | Run an Agent API/MCP client with the operator's private local connection, without printing credentials. | See Agent quickstart |
+
+After completing [Codex setup](../docs/deployment/CODEX_LOGIN.md), use
+`./scripts/local-stack.sh up` to start all fifteen persistent services. The script
+uses the base Compose file plus the Codex overlay in one project and checks
+runtime container health, authenticated bridge health and required Celery queues. See the setup guide
+for restart behavior and commands.
 
 Removed frontend-only scripts should be recreated or moved in the frontend
 repository if that workflow is still needed.

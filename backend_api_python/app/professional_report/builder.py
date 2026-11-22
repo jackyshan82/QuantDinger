@@ -360,6 +360,10 @@ def _us_market_dimension_narrative(features: Mapping[str, Any], language: str) -
     options = market_specific.get("options") or {}
     short_interest = market_specific.get("short_interest") or {}
     insider = market_specific.get("insider_activity") or {}
+    corporate_actions = market_specific.get("corporate_actions") or []
+    if corporate_actions:
+        facts.append(f"Alpaca 提供 {len(corporate_actions)} 项公司行动记录" if zh else
+                     f"{len(corporate_actions)} corporate action records from Alpaca")
     if filings:
         latest = filings[0] if isinstance(filings[0], Mapping) else {}
         form = latest.get("form")
@@ -394,6 +398,9 @@ def _us_market_dimension_narrative(features: Mapping[str, Any], language: str) -
         if iv is not None:
             detail.append((f"近ATM IV {float(iv):.1f}%" if zh else f"near-ATM IV {float(iv):.1f}%"))
         facts.append(("最近到期期权快照" if zh else "nearest-expiry options snapshot") + (f"（{'，'.join(detail)}）" if zh and detail else f" ({', '.join(detail)})" if detail else ""))
+        if options.get("feed") == "indicative":
+            facts.append("期权为 indicative 指示性数据，并非 OPRA 实际报价" if zh else
+                         "option prices use the indicative feed, not actual OPRA quotes")
     if short_interest:
         short_float = short_interest.get("short_percent_of_float_pct")
         short_ratio = short_interest.get("short_ratio_days")
@@ -583,10 +590,12 @@ def _build_scenarios(
     ]
 
 
-def _provider_payload(market: str) -> dict[str, Any]:
+def _provider_payload(market: str, alpaca_configured: bool = False) -> dict[str, Any]:
     rows = []
     for provider in list_providers(market=market):
         status = provider_configuration_status(provider, environ=os.environ)
+        if provider.key == "alpaca":
+            status["configured"] = alpaca_configured
         rows.append({
             "key": provider.key,
             "name": provider.name,
@@ -773,7 +782,8 @@ def build_professional_report(
             )
             if market == "CNStock" else
             (
-                "filings.sec", "expectations.analyst", "options.snapshot",
+                "filings.sec", "expectations.analyst", "options.snapshot", "options.yahoo_snapshot",
+                "corporate_actions.alpaca", "security_profile.alpaca", "market.alpaca_snapshot",
                 "short_interest.snapshot", "short_volume.snapshot", "insider_activity.snapshot",
                 "ownership.snapshot", "earnings.transcript",
             )
@@ -898,7 +908,8 @@ def build_professional_report(
         "market_features": market_features,
         "research_intelligence": research_intelligence,
         "evidence_snapshot": snapshot,
-        "provider_options": _provider_payload(market) if market in {"USStock", "HKStock", "CNStock", "Crypto", "Forex", "Futures"} else {},
+        "provider_options": _provider_payload(market, bool(((collector_payload.get("_meta") or {}).get("alpaca_provider_status") or {}).get("account_configured")))
+        if market in {"USStock", "HKStock", "CNStock", "Crypto", "Forex", "Futures"} else {},
         "warnings": warnings,
         "methodology": {
             "scoring_version": analysis_result.get("score_source") or "deterministic_objective_v2",

@@ -93,6 +93,13 @@ def normalize_backtest_timeframe(timeframe: str) -> str:
 def backtest_range_policy(market: str, timeframe: str) -> BacktestRangePolicy:
     normalized_market = DataSourceFactory.normalize_market(market or "")
     tf = normalize_backtest_timeframe(timeframe)
+    if normalized_market == "USStock":
+        from app.services.alpaca_history import stock_backtest_provider
+
+        if stock_backtest_provider() == "alpaca":
+            # Bound simulator workload independently of Yahoo's retention.
+            days = {"1m": 180, "3m": 365, "5m": 730}.get(tf, 3650)
+            return BacktestRangePolicy(days, f"{days} days", "Alpaca backtest workload limit")
     return (
         _MARKET_LIMITS.get(normalized_market, {}).get(tf)
         or _DEFAULT_LIMITS.get(tf)
@@ -138,6 +145,13 @@ def backtest_range_policy_metadata(
     timeframe_seconds = _TIMEFRAME_SECONDS.get(normalized_timeframe, 86400)
     normalized_warmup_bars = max(0, int(warmup_bars or 0))
     warmup_days = backtest_warmup_calendar_days(normalized_timeframe, normalized_warmup_bars)
+    if normalized_warmup_bars and "USStock" in normalized_markets:
+        from app.services.alpaca_history import stock_backtest_provider
+
+        if stock_backtest_provider() == "alpaca" and normalized_timeframe.lower().endswith(("m", "h")):
+            hours = timeframe_seconds / 3600
+            # Match the equity-session margin used by the runtime loader.
+            warmup_days = max(warmup_days, 7, math.ceil(normalized_warmup_bars * hours / 4 * 7 / 5 * 1.5))
     return {
         "timeframe": normalized_timeframe,
         "market": market,

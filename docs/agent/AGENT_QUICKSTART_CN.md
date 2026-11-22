@@ -13,6 +13,32 @@ curl -H "Authorization: Bearer $QUANTDINGER_AGENT_TOKEN" \
 
 任何会产生副作用的 `W/B/N/T` 请求都必须带唯一的 `Idempotency-Key`。只有重试完全相同的方法、路径、查询和请求体时，才复用原键。
 
+## 本地项目连接
+
+本地 WSL 经操作者配置后，连接保存在仓库外的
+`~/.config/quantdinger/agent.env`，目录权限为 `0700`，文件权限为 `0600`。
+文件包含 `QUANTDINGER_BASE_URL` 和 `QUANTDINGER_AGENT_TOKEN`；不要显示或复制其内容。
+同一 WSL 用户的 agent 和 worktree 可以通过启动脚本读取：
+
+```bash
+python scripts/with-agent-env.py python - <<'PY'
+import json, os, urllib.request
+request = urllib.request.Request(
+    os.environ["QUANTDINGER_BASE_URL"].rstrip("/") + "/api/agent/v1/whoami",
+    headers={"Authorization": "Bearer " + os.environ["QUANTDINGER_AGENT_TOKEN"]},
+)
+client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with client.open(request, timeout=15) as response:
+    print(json.dumps(json.load(response), ensure_ascii=False))
+PY
+```
+
+先核实返回的租户和权限限制，再执行其他调用。已安装 MCP 时可运行
+`python scripts/with-agent-env.py quantdinger-mcp`，详见 [MCP 接入](MCP_SETUP_CN.md)。
+显式环境变量优先；需要另一份私密配置时可设置 `QUANTDINGER_AGENT_ENV`。
+新 worktree 要确保项目指引和启动脚本已经带入，未提交文件不会自动复制。
+其他用户、机器或容器需单独配置已授权凭据；持有连接不代表获得新的下单或实盘部署授权。
+
 ## 2. 策略源码与部署
 
 可执行策略使用 Strategy API V2。推荐流程：

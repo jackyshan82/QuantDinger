@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -1919,6 +1920,14 @@ class TradingExecutor:
         )
         leverage = float(values.get("leverage") or 1)
         trading_config = _json_object(values.get("trading_config"))
+        if (
+            str(values.get("market_category") or "") == "USStock"
+            and bool((trading_config.get("params") or {}).get("whole_shares"))
+            and str(values.get("signal_type") or "") in {"open_long", "add_long", "open_short", "add_short"}
+        ):
+            quantity = float(math.floor(quantity))
+            if quantity <= 0:
+                return False
         ai_decision_filter = bool(trading_config.get("ai_decision_filter"))
         nominal_capacity = strategy_equity * max(1.0, leverage)
         entry_pct = ((quantity * reference_price) / nominal_capacity * 100.0) if nominal_capacity > 0 else 0.0

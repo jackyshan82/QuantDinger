@@ -177,7 +177,7 @@ class MarketBarCloseClock:
             session_key = (key.market, closed_at)
             actionable = session_boundaries.get(session_key)
             if actionable is None:
-                actionable = is_equity_bar_close(key.market, closed_at)
+                actionable = is_equity_bar_close(key.market, closed_at, extended_hours=True)
                 session_boundaries[session_key] = actionable
             if not actionable:
                 continue

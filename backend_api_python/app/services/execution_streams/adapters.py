@@ -285,9 +285,13 @@ class PrivateWebSocketAdapter:
                 elif isinstance(verify, str):
                     sslopt = {"ca_certs": verify}
                 try:
+                    # Keep the Alpaca trading connection active through short
+                    # idle windows; retain a bounded missing-pong deadline.
+                    alpaca_stream = isinstance(self, AlpacaExecutionAdapter)
                     self._ws.run_forever(
-                        ping_interval=20,
-                        ping_timeout=10,
+                        ping_interval=10 if alpaca_stream else 20,
+                        ping_timeout=8 if alpaca_stream else 10,
+                        ping_payload="quantdinger" if alpaca_stream else "",
                         sslopt=sslopt,
                         skip_utf8_validation=True,
                     )

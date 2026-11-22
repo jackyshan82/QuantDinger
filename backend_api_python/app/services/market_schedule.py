@@ -219,7 +219,7 @@ def is_equity_market_open(market: str, now: Optional[datetime] = None) -> bool:
     return True
 
 
-def is_equity_bar_close(market: str, closed_at: datetime) -> bool:
+def is_equity_bar_close(market: str, closed_at: datetime, *, extended_hours: bool = False) -> bool:
     """Return whether a UTC boundary closes a bar inside an equity session."""
     normalized_market = str(market or "").strip()
     if normalized_market not in CALENDAR_BY_MARKET:
@@ -230,6 +230,13 @@ def is_equity_bar_close(market: str, closed_at: datetime) -> bool:
     session = pd.Timestamp(session_date)
     if not calendar.is_session(session):
         return False
+    if extended_hours and normalized_market == "USStock":
+        local_day = pd.Timestamp(session_date).tz_localize(calendar.tz)
+        regular_close = pd.Timestamp(calendar.session_close(session)).tz_convert(calendar.tz)
+        end_hour = 17 if regular_close.hour < 16 else 20
+        start = _python_utc(local_day + pd.Timedelta(hours=4))
+        end = _python_utc(local_day + pd.Timedelta(hours=end_hour))
+        return start < boundary <= end
     session_open = _python_utc(calendar.session_open(session))
     session_close = _python_utc(calendar.session_close(session))
     if not session_open < boundary <= session_close:
